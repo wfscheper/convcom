@@ -4,6 +4,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 )
 
 const (
-	golangciLintURL = "https://github.com/golangci/golangci-lint/releases/download/v1.24.0/golangci-lint-1.24.0-%s-%s.tar.gz"
+	golangciLintURL = "https://github.com/golangci/golangci-lint/releases/download/v1.24.0/golangci-lint-1.24.0-%s-%s"
 	gotestsumURL    = "https://github.com/gotestyourself/gotestsum/releases/download/v0.4.1/gotestsum_0.4.1_%s_%s.tar.gz"
 )
 
@@ -35,7 +36,6 @@ var (
 	// tools
 	golangcilint = filepath.Join("bin", "golangci-lint")
 	gotestsum    = filepath.Join("bin", "gotestsum")
-	goveralls    = filepath.Join("bin", "goveralls")
 
 	// commands
 	gobuild         = sh.RunCmd(goexe, "build")
@@ -49,6 +49,13 @@ var (
 func init() {
 	// Force use of go modules
 	os.Setenv("GO111MODULES", "on")
+
+	if runtime.GOOS == "windows" {
+		golangcilint += ".exe"
+		golangcilintCmd = sh.RunCmd(golangcilint, "run")
+		gotestsum += ".exe"
+		gotestsumCmd = sh.RunCmd(gotestsum, "--")
+	}
 }
 
 // All runs format, lint, vet, build, and test targets
@@ -88,17 +95,6 @@ func Coverage(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-// Coveralls uploads coverage report
-func Coveralls(ctx context.Context) error {
-	// only do something if within travis
-	if os.Getenv("TRAVIS_HOME") == "" {
-		return nil
-	}
-	mg.CtxDeps(ctx, getGoveralls)
-	fmt.Println("running goveralls…")
-	return sh.Run(goveralls, "-coverprofile=coverage/cover.out", "-service=travis-ci")
 }
 
 // Format runs go fmt
@@ -200,11 +196,63 @@ func getFileInTarball(ctx context.Context, path, u string) error {
 	return nil
 }
 
+func getFileInZip(ctx context.Context, path, u string) error {
+	r, err := getURL(ctx, u)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = io.Copy(ioutil.Discard, r.Body)
+		r.Body.Close()
+	}()
+
+	f, err := ioutil.TempFile("", "")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, r.Body); err != nil {
+		return err
+	}
+	f.Close()
+
+	z, err := zip.OpenReader(f.Name())
+	if err != nil {
+		return err
+	}
+
+	file := filepath.Base(path)
+	for _, zf := range z.File {
+		fmt.Println("file: ", zf.Name)
+		if strings.HasSuffix(zf.Name, file) {
+			inFile, err := zf.Open()
+			if err != nil {
+				return err
+			}
+			defer inFile.Close()
+			outFile, err := os.Create(path)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+			if _, err := io.Copy(outFile, inFile); err != nil {
+				return err
+			}
+			return os.Chmod(path, 0755)
+		}
+	}
+
+	return nil
+}
+
 func getGolangcilint(ctx context.Context) error {
 	mg.CtxDeps(ctx, binDir)
 	_, err := os.Stat(golangcilint)
 	if os.IsNotExist(err) {
-		return getFileInTarball(ctx, golangcilint, fmt.Sprintf(golangciLintURL, runtime.GOOS, runtime.GOARCH))
+		if runtime.GOOS != "windows" {
+			return getFileInTarball(ctx, golangcilint, fmt.Sprintf(golangciLintURL+".tar.gz", runtime.GOOS, runtime.GOARCH))
+		}
+		return getFileInZip(ctx, golangcilint, fmt.Sprintf(golangciLintURL+".zip", runtime.GOOS, runtime.GOARCH))
 	}
 	return err
 }
@@ -214,15 +262,6 @@ func getGotestsum(ctx context.Context) error {
 	_, err := os.Stat(gotestsum)
 	if os.IsNotExist(err) {
 		return getFileInTarball(ctx, gotestsum, fmt.Sprintf(gotestsumURL, runtime.GOOS, runtime.GOARCH))
-	}
-	return err
-}
-
-func getGoveralls(ctx context.Context) error {
-	mg.CtxDeps(ctx, binDir)
-	_, err := os.Stat(goveralls)
-	if os.IsNotExist(err) {
-		return sh.Run(goexe, "install", "github.com/mattn/goveralls")
 	}
 	return err
 }

@@ -1,6 +1,7 @@
 [![Built with Mage](https://magefile.org/badge.svg)](https://magefile.org)
 [![GoDoc](https://godoc.org/github.com/wfscheper/convcom?status.svg)](https://godoc.org/github.com/wfscheper/convcom)
-[![Build Status](https://travis-ci.org/wfscheper/convcom.svg?branch=master)](https://travis-ci.org/wfscheper/convcom)
+[![Build](https://github.com/wfscheper/convcom/workflows/Build/badge.svg)](https://github.com/wfscheper/convcom/actions?query=workflow%3ABuild)
+[![Coverage Status](https://coveralls.io/repos/github/wfscheper/convcom/badge.svg?branch=master)](https://coveralls.io/github/wfscheper/convcom?branch=master)
 
 # convcom
 
